@@ -10,7 +10,7 @@ public class Producto {
 
     public Producto(String codigo, String nombre, double precio, int existencia) {
         this.codigo = codigo;
-        this.nombre = nombre
+        this.nombre = nombre;
         this.precio = precio;
         this.existencia = existencia;
     }
