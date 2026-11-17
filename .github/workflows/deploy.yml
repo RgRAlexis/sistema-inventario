@@ -1,0 +1,155 @@
+name: Despliegue del Sistema de Inventario
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version liberada a desplegar (tag de GitHub Releases)'
+        required: true
+        default: 'v1.1.0'
+      version_respaldo:
+        description: 'Version estable conservada para recuperar si falla'
+        required: true
+        default: 'v1.0.2'
+
+jobs:
+  deploy:
+    name: Desplegar en el servidor de destino (SSH)
+    runs-on: ubuntu-latest
+
+    # Servidor de destino de prueba: contenedor Linux con SSH que vive durante la ejecucion
+    services:
+      servidor:
+        image: lscr.io/linuxserver/openssh-server:latest
+        env:
+          USER_NAME: ${{ secrets.DEPLOY_USER }}
+          PUBLIC_KEY: ${{ secrets.DEPLOY_PUBLIC_KEY }}
+          PASSWORD_ACCESS: 'false'
+          SUDO_ACCESS: 'true'
+        ports:
+          - 2222:2222
+
+    env:
+      VERSION: ${{ inputs.version }}
+      RESPALDO: ${{ inputs.version_respaldo }}
+
+    steps:
+      - name: Descargar version a desplegar
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ inputs.version }}
+          fileName: sistema-inventario-${{ inputs.version }}.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Descargar version de respaldo
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: ${{ github.repository }}
+          tag: ${{ inputs.version_respaldo }}
+          fileName: sistema-inventario-${{ inputs.version_respaldo }}.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Esperar a que el servidor SSH este disponible
+        run: |
+          ls -l sistema-inventario-*.zip
+          for i in $(seq 1 30); do nc -z localhost 2222 && break; sleep 2; done
+          sleep 5
+          echo "Servidor SSH escuchando en el puerto 2222"
+
+      - name: Preparar servidor de destino
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            echo "Servidor: $(hostname) - $(grep PRETTY_NAME /etc/os-release)"
+            sudo apk add --no-cache openjdk21-jre-headless > /dev/null
+            java -version
+            mkdir -p ~/sistema-inventario/paquetes ~/sistema-inventario/versiones
+            ls -la ~/sistema-inventario
+
+      - name: Transferir paquetes al servidor
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          source: sistema-inventario-*.zip
+          target: sistema-inventario/paquetes
+
+      - name: Desplegar version estable (respaldo)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          envs: RESPALDO
+          script: |
+            BASE=~/sistema-inventario
+            ls -l $BASE/paquetes
+            mkdir -p $BASE/versiones/$RESPALDO
+            unzip -oq $BASE/paquetes/sistema-inventario-$RESPALDO.zip -d $BASE/versiones/$RESPALDO
+            ln -sfn $BASE/versiones/$RESPALDO $BASE/actual
+            echo ">>> Version activa: $(readlink $BASE/actual)"
+            cd $BASE/actual
+            java -jar sistema-inventario.jar
+            echo ">>> Consulta de productos:"
+            java -cp sistema-inventario.jar BusquedaProductos
+
+      - name: Desplegar nueva version
+        id: nueva
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          envs: VERSION
+          script: |
+            BASE=~/sistema-inventario
+            mkdir -p $BASE/versiones/$VERSION
+            unzip -oq $BASE/paquetes/sistema-inventario-$VERSION.zip -d $BASE/versiones/$VERSION
+            ln -sfn $BASE/versiones/$VERSION $BASE/actual
+            echo ">>> Version activa: $(readlink $BASE/actual)"
+            cd $BASE/actual
+            java -jar sistema-inventario.jar
+            CODIGO=$?
+            echo ">>> Codigo de salida: $CODIGO"
+            exit $CODIGO
+
+      - name: Recuperar version anterior (rollback)
+        if: steps.nueva.outcome == 'failure'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          envs: VERSION,RESPALDO
+          script: |
+            BASE=~/sistema-inventario
+            echo ">>> $VERSION fallo en el servidor. Regresando a $RESPALDO"
+            ln -sfn $BASE/versiones/$RESPALDO $BASE/actual
+            echo ">>> Version activa: $(readlink $BASE/actual)"
+            cd $BASE/actual
+            java -jar sistema-inventario.jar
+            echo ">>> Recuperacion completada"
+
+      - name: Estado final del servidor
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            cd ~/sistema-inventario
+            ls -l
+            ls -R versiones
+            echo ">>> Version en ejecucion: $(readlink actual)"
