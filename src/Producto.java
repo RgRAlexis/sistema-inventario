@@ -24,7 +24,7 @@ public class Producto {
     }
 
     public double getPrecio() {
-        return precio * 1.16;
+        return precio;
     }
 
     public int getExistencia() {
