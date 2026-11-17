@@ -1,0 +1,29 @@
+name: Pruebas - Sistema de Inventario
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  pruebas:
+    name: Ejecutar pruebas automatizadas
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar el código del repositorio
+        uses: actions/checkout@v6
+
+      - name: Configurar Java 21 (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Compilar código y pruebas
+        run: javac -d out src/*.java tests/*.java
+
+      - name: Ejecutar pruebas
+        run: java -cp out ProductoTest
