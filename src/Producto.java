@@ -39,7 +39,7 @@ public class Producto {
         System.out.println("Nombre: " + nombre);
         System.out.println("Precio: $" + precio);
         System.out.println("Existencia: " + existencia + " unidades");
-        System.out.println("Estado: Producto en inventario");
+        System.out.println("Producto registrado");
     }
 
     public static void main(String[] args) {
