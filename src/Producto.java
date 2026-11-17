@@ -1,3 +1,6 @@
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Representa un producto dentro del Sistema de Inventario.
  */
@@ -43,7 +46,19 @@ public class Producto {
     }
 
     public static void main(String[] args) {
-        Producto producto = new Producto("P001", "Teclado inalambrico", 450.00, 25);
-        producto.mostrarInformacion();
+        List<Producto> inventario = new ArrayList<>();
+        inventario.add(new Producto("P001", "Teclado inalambrico", 450.00, 25));
+        inventario.add(new Producto("P002", "Mouse optico", 180.00, 40));
+        inventario.add(new Producto("P003", "Teclado mecanico", 1200.00, 10));
+
+        System.out.println("=== Inventario (" + inventario.size() + " productos) ===");
+        double valorTotal = 0;
+        for (int i = 0; i <= inventario.size(); i++) {
+            Producto p = inventario.get(i);
+            p.mostrarInformacion();
+            valorTotal += p.getPrecio() * p.getExistencia();
+            System.out.println("---");
+        }
+        System.out.println("Valor total del inventario: $" + valorTotal);
     }
 }
